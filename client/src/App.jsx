@@ -1,31 +1,42 @@
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import Register from './components/Register';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './components/Login';
+import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import Setup from './components/Setup';
 import Students from './components/Students';
 import Tools from './components/Tools';
+import Assignments from './components/Assignements';
+import Attendance from './components/Attendance';
+import Home from './components/Home';
+// import ChatApp from './components/Messages';
+import Messages from './components/Messages';
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem('token');
+  return token ? children : <Navigate to="/login" />;
+};
 
 function App() {
   return (
     <Router>
-      <nav style={{ padding: '1rem', background: '#f4f4f4' }}>
-        <Link to="/register" style={{ margin: '0 10px' }}>Register</Link>
-        <Link to="/login" style={{ margin: '0 10px' }}>Login</Link>
-        <Link to="/dashboard">Dashboard</Link>
-      </nav>
-
-      <div style={{ padding: '2rem' }}>
-        <Routes>
-          <Route path="/register" element={<Register />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/setup" element={<Setup />} />
-          <Route path="/students" element={<Students />} />
-          <Route path="/tools" element={<Tools />} />
-          <Route path="/" element={<Login />} />  {/* Default to login */}
-        </Routes>
-      </div>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              {/* <Route path="/" element={<Navigate to="/dashboard" />} /> */}
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/setup" element={<Setup />} />
+              <Route path="/students" element={<Students />} />
+              <Route path="/tools" element={<Tools />} />
+              <Route path='/assignements' element={<Assignments />} />
+              <Route path="/attendance" element={<Attendance />} />
+              <Route path="/community" element={<Messages />} />
+            </Routes>
+          </ProtectedRoute>
+        } />
+      </Routes>
     </Router>
   );
 }

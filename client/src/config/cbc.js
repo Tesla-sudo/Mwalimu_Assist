@@ -1,18 +1,26 @@
+// src/config/cbc.js
 export const CBC_GRADE_LEVELS = [
-  { id: 'lower-primary', grades: [1, 2, 3], name: 'Lower Primary (Grades 1-3)' },
-  { id: 'upper-primary', grades: [4, 5, 6], name: 'Upper Primary (Grades 4-6)' },
-  { id: 'junior-secondary', grades: [7, 8, 9], name: 'Junior Secondary (Grades 7-9)' }
+  { id: "lower", name: "Lower Primary", grades: [1, 2, 3] },
+  { id: "upper", name: "Upper Primary", grades: [4, 5, 6] },
+  { id: "junior", name: "Junior Secondary", grades: [7, 8, 9] }
 ];
 
-export const CBC_SUBJECTS = {
-  'lower-primary': ['English', 'Kiswahili', 'Mathematics', 'Environmental Activities', 'Hygiene & Nutrition', 'Religious Activities', 'Movement & Creative Activities'],
-  'upper-primary': ['English', 'Kiswahili', 'Mathematics', 'Science & Technology', 'Social Studies', 'Agriculture', 'Home Science', 'Religious Education'],
-  'junior-secondary': ['English', 'Kiswahili', 'Mathematics', 'Integrated Science', 'Health Education', 'Pre-Technical & Pre-Career', 'Social Studies', 'Religious Education', 'Business Studies']
-};
+export const ALL_CBC_SUBJECTS = [
+  // Core
+  "English", "Kiswahili", "Mathematics", "Science and Technology", "Social Studies",
+  "Religious Education (CRE/IRE/HRE)", "Creative Arts", "Physical Education",
 
-export const getSubjectsForGrades = (selectedGrades) => {
-  const levelIds = CBC_GRADE_LEVELS.find(level => 
-    selectedGrades.some(g => level.grades.includes(g))
-  )?.id || 'lower-primary';  // Default fallback
-  return CBC_SUBJECTS[levelIds] || [];
+  // Junior Secondary (Grade 7-9)
+  "Integrated Science", "Health Education", "Life Skills Education",
+  "Pre-Technical Studies", "Business Studies", "Agriculture", "Home Science",
+  "Computer Science", "Visual Arts", "Performing Arts", "Foreign Languages (French/German)",
+  "Kenya Sign Language", "Indigenous Languages"
+];
+
+export const getSubjectsForGrades = (grades = []) => {
+  if (grades.length === 0) return [];
+  const hasJunior = grades.some(g => g >= 7);
+  const base = ["English", "Kiswahili", "Mathematics", "Science and Technology", "Social Studies", "Religious Education (CRE/IRE/HRE)", "Creative Arts"];
+  const juniorExtras = hasJunior ? ALL_CBC_SUBJECTS.filter(s => !base.includes(s)) : [];
+  return [...new Set([...base, ...juniorExtras])];
 };

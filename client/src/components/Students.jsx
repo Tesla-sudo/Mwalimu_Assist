@@ -1,10 +1,8 @@
-// frontend/src/components/Students.jsx
-// eslint-disable-next-line no-unused-vars
-import React, { useState, useEffect, useRef } from 'react';
+// src/components/Students.jsx
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { addStudent, getStudents, getRecommendations, getProfile } from '../services/api';
-
-const GRADES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+import Navbar from './Navbar';
 
 const Students = () => {
   const [students, setStudents] = useState([]);
@@ -14,32 +12,22 @@ const Students = () => {
   const [bulkRows, setBulkRows] = useState([{ name: '', performance: '' }]);
   const [saving, setSaving] = useState(false);
   const [recs, setRecs] = useState({});
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingRec, setLoadingRec] = useState({});
+  const [teacherClasses, setTeacherClasses] = useState({});
   const navigate = useNavigate();
 
-  // Fetch teacher profile to get their subjects per class
+  // Load teacher profile and students
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const res = await getProfile();
-        const { classes = [], subjects = [] } = res.data;
-        
-        // Map: class → subjects they teach
         const classSubjectMap = {};
-        classes.forEach(cls => {
-          // For now: assume all subjects apply to all selected classes
-          // Later: can refine per-class subjects
-          classSubjectMap[cls] = subjects;
+        res.data.classes.forEach(cls => {
+          classSubjectMap[cls] = res.data.subjects;
         });
-
-        // Store in state for dynamic dropdown
-        window.__teacherClassSubjects = classSubjectMap;
-        setLoadingProfile(false);
+        setTeacherClasses(classSubjectMap);
       } catch (err) {
-        if (err.response?.status === 401) {
-          localStorage.removeItem('token');
-          navigate('/login');
-        }
+        if (err.response?.status === 401) navigate('/login');
       }
     };
     fetchProfile();
@@ -49,13 +37,13 @@ const Students = () => {
 
   // Update available subjects when class changes
   useEffect(() => {
-    if (selectedClass && window.__teacherClassSubjects?.[selectedClass]) {
-      setAvailableSubjects(window.__teacherClassSubjects[selectedClass]);
-      setSelectedSubject(''); // Reset subject
+    if (selectedClass && teacherClasses[selectedClass]) {
+      setAvailableSubjects(teacherClasses[selectedClass]);
+      setSelectedSubject('');
     } else {
       setAvailableSubjects([]);
-      setSelectedSubject('');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClass]);
 
   const fetchStudents = async () => {
@@ -63,228 +51,255 @@ const Students = () => {
       const res = await getStudents();
       setStudents(res.data);
     } catch (err) {
-      if (err.response?.status === 401) {
-        localStorage.removeItem('token');
-        navigate('/login');
-      }
+      if (err.response?.status === 401) navigate('/login');
     }
   };
 
-  const addRow = () => {
-    setBulkRows(prev => [...prev, { name: '', performance: '' }]);
-  };
+  // Group students by Grade + Subject
+  const groupedStudents = students.reduce((acc, s) => {
+    const key = `Grade ${s.class} - ${s.subject}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(s);
+    return acc;
+  }, {});
 
-  const updateRow = (index, field, value) => {
+  // Bulk add helpers
+  const addRow = () => setBulkRows(prev => [...prev, { name: '', performance: '' }]);
+  const updateRow = (i, field, val) => {
     const updated = [...bulkRows];
-    updated[index][field] = value;
+    updated[i][field] = val;
     setBulkRows(updated);
   };
-
-  const removeRow = (index) => {
-    setBulkRows(prev => prev.filter((_, i) => i !== index));
-  };
+  const removeRow = (i) => setBulkRows(prev => prev.filter((_, idx) => idx !== i));
 
   const handlePaste = (e) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData('text');
-    const rows = pasted
-      .trim()
-      .split('\n')
-      .map(row => {
-        const [name, perf] = row.split('\t');
-        return {
-          name: name?.trim() || '',
-          performance: perf?.trim() ? parseInt(perf) || '' : ''
-        };
-      })
-      .filter(r => r.name);
-
+    const text = e.clipboardData.getData('text');
+    const rows = text.trim().split('\n').map(line => {
+      const [name, perf] = line.split('\t');
+      return { name: name?.trim(), performance: perf?.trim() || '' };
+    }).filter(r => r.name);
     setBulkRows(rows.length > 0 ? rows : [{ name: '', performance: '' }]);
   };
 
   const saveBulk = async () => {
-    if (!selectedClass) return alert('Please select a class');
-    if (!selectedSubject) return alert('Please select a subject');
-    
-    const validRows = bulkRows
-      .map(r => ({
-        name: r.name.trim(),
-        performance: r.performance ? parseInt(r.performance) : undefined
-      }))
+    if (!selectedClass || !selectedSubject) return alert("Please select grade and subject");
+
+    const valid = bulkRows
+      .map(r => ({ name: r.name.trim(), performance: r.performance ? parseInt(r.performance) : null }))
       .filter(r => r.name);
 
-    if (validRows.length === 0) return alert('No valid students to add');
+    if (valid.length === 0) return alert("No students to add");
 
     setSaving(true);
     try {
-      for (const { name, performance } of validRows) {
-        await addStudent({
-          name,
-          class: parseInt(selectedClass),
-          subject: selectedSubject,
-          performance
-        });
+      for (const { name, performance } of valid) {
+        await addStudent({ name, class: parseInt(selectedClass), subject: selectedSubject, performance });
       }
       setBulkRows([{ name: '', performance: '' }]);
       fetchStudents();
-      alert(`${validRows.length} students added/updated in ${selectedSubject}!`);
+      alert(`${valid.length} students added successfully!`);
     // eslint-disable-next-line no-unused-vars
     } catch (err) {
-      alert('Some students failed to save');
+      alert("Some students failed to save");
     } finally {
       setSaving(false);
     }
   };
 
   const fetchRec = async (studentId) => {
+    setLoadingRec(prev => ({ ...prev, [studentId]: true }));
     try {
       const res = await getRecommendations({ studentId });
       setRecs(prev => ({ ...prev, [studentId]: res.data.recommendations }));
-    } catch {
-      alert('AI recommendation failed');
+    } catch (err) {
+      console.error("AI Recommendation failed:", err);
+      setRecs(prev => ({ ...prev, [studentId]: "Gemini is taking a break. Try again soon!" }));
+    } finally {
+      setLoadingRec(prev => ({ ...prev, [studentId]: false }));
     }
   };
 
-  if (loadingProfile) return <p>Loading your profile...</p>;
-
   return (
-    <div className="students-page">
-      <h2>Manage Students</h2>
+    <>
+      <Navbar />
+      <div className="min-h-screen bg-gray-50 py-12 px-4">
+        <div className="max-w-7xl mx-auto">
 
-      {/* Bulk Add Section */}
-      <div className="bulk-section">
-        <h3>Add Multiple Students</h3>
-        <p><strong>Tip:</strong> Copy from Excel/Google Sheets → Paste below</p>
-
-        <div className="selectors-row">
-          <div className="class-selector">
-            <label>Select Class: </label>
-            <select
-              value={selectedClass}
-              onChange={e => setSelectedClass(e.target.value)}
-              required
-            >
-              <option value="">Choose Grade</option>
-              {GRADES.map(g => (
-                <option key={g} value={g}>Grade {g}</option>
-              ))}
-            </select>
+          {/* Header */}
+          <div className="text-center mb-12">
+            <h1 className="text-5xl font-bold text-blue-800 mb-4">Manage Your Students</h1>
+            <p className="text-xl text-gray-600">Add students, track performance, get personalized AI advice</p>
           </div>
 
-          <div className="subject-selector">
-            <label>Select Subject: </label>
-            <select
-              value={selectedSubject}
-              onChange={e => setSelectedSubject(e.target.value)}
-              disabled={!selectedClass || availableSubjects.length === 0}
-              required
-            >
-              <option value="">
-                {selectedClass 
-                  ? (availableSubjects.length > 0 ? 'Choose Subject' : 'No subjects for this class')
-                  : 'First select class'}
-              </option>
-              {availableSubjects.map(sub => (
-                <option key={sub} value={sub}>{sub}</option>
-              ))}
-            </select>
+          {/* Add Students Section */}
+          <div className="card mb-12">
+            <h2 className="text-3xl font-bold text-blue-800 mb-8 text-center">Add Students (Paste from Excel!)</h2>
+
+            <div className="grid md:grid-cols-2 gap-6 mb-8">
+              <div>
+                <label className="block text-lg font-semibold text-gray-700 mb-3">Select Grade</label>
+                <select
+                  value={selectedClass}
+                  onChange={e => setSelectedClass(e.target.value)}
+                  className="w-full px-5 py-4 text-lg border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition"
+                >
+                  <option value="">Choose Grade</option>
+                  {Object.keys(teacherClasses).sort((a, b) => a - b).map(g => (
+                    <option key={g} value={g}>Grade {g}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-lg font-semibold text-gray-700 mb-3">Select Subject</label>
+                <select
+                  value={selectedSubject}
+                  onChange={e => setSelectedSubject(e.target.value)}
+                  disabled={!selectedClass}
+                  className="w-full px-5 py-4 text-lg border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  <option value="">{selectedClass ? 'Choose Subject' : 'First select a grade'}</option>
+                  {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Bulk Input Table */}
+            <div className="bg-white rounded-2xl shadow-inner border-2 border-gray-200 overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+                  <tr>
+                    <th className="px-6 py-5 text-left text-lg font-semibold">Student Name</th>
+                    <th className="px-6 py-5 text-left text-lg font-semibold">Performance %</th>
+                    <th className="w-16"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {bulkRows.map((row, i) => (
+                    <tr key={i} className="hover:bg-gray-50 transition">
+                      <td className="px-6 py-4">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={e => updateRow(i, 'name', e.target.value)}
+                          onPaste={i === 0 ? handlePaste : null}
+                          placeholder="e.g. Amina Hassan"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </td>
+                      <td className="px-6 py-4">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={row.performance}
+                          onChange={e => updateRow(i, 'performance', e.target.value)}
+                          placeholder="85"
+                          className="w-28 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="text-center">
+                        {bulkRows.length > 1 && (
+                          <button
+                            onClick={() => removeRow(i)}
+                            className="w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center font-bold text-xl transition"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-end mt-8">
+              <button
+                onClick={addRow}
+                className="px-8 py-4 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-xl transition shadow-lg"
+              >
+                + Add Another Row
+              </button>
+              <button
+                onClick={saveBulk}
+                disabled={saving || !selectedSubject}
+                className={`px-10 py-5 text-xl font-bold rounded-xl transition shadow-lg ${
+                  selectedSubject
+                    ? 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white'
+                    : 'bg-gray-400 cursor-not-allowed text-gray-200'
+                }`}
+              >
+                {saving ? 'Saving Students...' : `Add ${bulkRows.filter(r => r.name.trim()).length} Students`}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="bulk-table-container">
-          <table className="bulk-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Performance %</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {bulkRows.map((row, i) => (
-                <tr key={i}>
-                  <td>
-                    <input
-                      type="text"
-                      value={row.name}
-                      onChange={e => updateRow(i, 'name', e.target.value)}
-                      placeholder="e.g. John Kamau"
-                      onPaste={i === 0 ? handlePaste : undefined}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      value={row.performance}
-                      onChange={e => updateRow(i, 'performance', e.target.value)}
-                      placeholder="0-100"
-                      min="0"
-                      max="100"
-                    />
-                  </td>
-                  <td>
-                    {bulkRows.length > 1 && (
-                      <button
-                        type="button"
-                        className="remove-row"
-                        onClick={() => removeRow(i)}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          {/* Students List */}
+          <div className="mt-16">
+            <h2 className="text-4xl font-bold text-center text-blue-800 mb-10">
+              Your Students ({students.length})
+            </h2>
 
-        <div className="bulk-actions">
-          <button type="button" onClick={addRow} className="add-row-btn">
-            + Add Row
-          </button>
-          <button
-            onClick={saveBulk}
-            disabled={saving || !selectedClass || !selectedSubject}
-            className="save-bulk-btn"
-          >
-            {saving 
-              ? 'Saving...' 
-              : `Add ${bulkRows.filter(r => r.name).length} Students to ${selectedSubject}`
-            }
-          </button>
-        </div>
-      </div>
-
-      {/* Existing Students List */}
-      <div className="students-list">
-        <h3>Your Students ({students.length})</h3>
-        {students.length === 0 ? (
-          <p>No students yet. Add above!</p>
-        ) : (
-          <ul>
-            {students.map(student => (
-              <li key={student._id} className="student-item">
-                <div>
-                  <strong>{student.name}</strong> — Grade {student.class}, <em>{student.subject}</em>
-                  {student.performance !== undefined && ` — ${student.performance}%`}
-                </div>
-                <div className="actions">
-                  <button onClick={() => fetchRec(student._id)}>
-                    AI Recommendation
-                  </button>
-                  {recs[student._id] && (
-                    <div className="recommendation">
-                      <strong>AI:</strong> {recs[student._id]}
+            {Object.keys(groupedStudents).length === 0 ? (
+              <div className="text-center py-20 bg-gray-100 rounded-2xl">
+                <p className="text-2xl text-gray-600">No students yet. Add your first class above!</p>
+              </div>
+            ) : (
+              <div className="space-y-12">
+                {Object.entries(groupedStudents).map(([key, list]) => (
+                  <div key={key} className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
+                    <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-6">
+                      <h3 className="text-2xl font-bold">{key} • {list.length} students</h3>
                     </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+                    <div className="p-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {list.map(s => (
+                          <div key={s._id} className="bg-gradient-to-b from-blue-50 to-white border-2 border-blue-200 rounded-2xl p-6 hover:shadow-xl transition transform hover:-translate-y-1">
+                            <div className="flex justify-between items-start mb-4">
+                              <h4 className="text-xl font-bold text-gray-800">{s.name}</h4>
+                              {s.performance != null && (
+                                <span className={`px-3 py-1 rounded-full text-white font-bold text-sm ${
+                                  s.performance >= 70 ? 'bg-green-500' :
+                                  s.performance >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                                }`}>
+                                  {s.performance}%
+                                </span>
+                              )}
+                            </div>
+
+                            <button
+                              onClick={() => fetchRec(s._id)}
+                              disabled={loadingRec[s._id]}
+                              className={`w-full py-3 px-6 rounded-xl font-bold text-white transition mt-4 ${
+                                loadingRec[s._id]
+                                  ? 'bg-gray-500 cursor-not-allowed'
+                                  : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg'
+                              }`}
+                            >
+                              {loadingRec[s._id] ? 'Gemini Thinking...' : 'AI Help'}
+                            </button>
+
+                            {recs[s._id] && (
+                              <div className="mt-5 p-5 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                                <p className="font-bold text-blue-800 mb-2">Gemini Advice:</p>
+                                <p className="text-gray-700 leading-relaxed text-sm">{recs[s._id]}</p>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

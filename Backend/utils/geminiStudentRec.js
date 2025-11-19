@@ -7,25 +7,28 @@ dotenv.config();
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 // A reusable generator function
-export const generateCBCContent = async ({ type, grade, subject, topic }) => {
+export const generateStudentRecommendation = async ({ name, grade, subject, performance }) => {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     const prompt = `
 
-    You are an expert Kenyan CBC teacher for Grade ${grade} ${subject}. Genarate high-quality , KICD-aligned content in clear English. 
-    Type: ${type.toUpperCase()}
-    ${topic ? `Specific Topic: ${topic}` : ""}
+   You are an expert Kenyan CBC tutor giving personalized advice.
 
-    Requirements:
-    - Use competency-based format
-    - Include learning outcomes, activities, assesment
-    - Suggest 2-4 relevant Youtube  videos (real or realistic Kenyan links)
-    - Include practical real-life examples or local materials
-    - Format with clear headings and bullet points
-    - End with "Recommended Resources" section with links
+Student: ${name}
+Grade: ${grade}
+Subject: ${subject}
+Recent Performance: ${performance}%
 
-    Respond in professional, ready-to-use format, with no asterisks, hashes or any other symbols that may make it hard for a local teacher to read through.
+Give a short, practical, encouraging recommendation in 3–5 sentences (max 100 words).
+Include:
+- One strength or effort acknowledgment
+- One specific area to improve
+- One teaching strategy or resource (local or YouTube)
+- One actionable next step for the teacher
+
+Use warm, positive tone. Respond in clear English/Kiswahili mix if natural.
+Example: "John is doing well in reading but struggles with comprehension. Try story retelling games. Watch 'Tahamaki TV - Grade 4 Stories' on YouTube."
       
     `;
     // You are an expert Kenyan CBC curriculum assistant.
